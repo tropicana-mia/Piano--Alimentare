@@ -514,6 +514,53 @@
     font-family: var(--font-body);
   }
 
+  .schedule-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    overflow-x: auto;
+  }
+  .schedule-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 74px;
+    flex: none;
+  }
+  .schedule-icon { font-size: 16px; }
+  .schedule-label { font-size: 11px; color: var(--ink-soft); }
+  .schedule-slot input[type="time"] {
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    padding: 4px 6px;
+    font-size: 12.5px;
+    background: var(--cream);
+    color: var(--ink);
+    width: 84px;
+    text-align: center;
+  }
+  .schedule-gap {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 999px;
+    flex: none;
+    white-space: nowrap;
+    margin-top: -18px;
+  }
+  .schedule-gap.gap-ok { background: var(--sage-light); color: var(--sage); }
+  .schedule-gap.gap-short { background: var(--rust-light); color: var(--rust); }
+  .schedule-gap.gap-long { background: var(--mustard-light); color: var(--mustard); }
+  @media (max-width: 560px) {
+    .schedule-strip { flex-wrap: nowrap; }
+  }
+
   @media print {
     .daynav, .topbar-actions, .swap-toggle, .icon-btn { display: none !important; }
   }
@@ -681,6 +728,7 @@ const DEFAULT_ADHERENCE = {};
 const DEFAULT_CHALLENGES = {};
 const DEFAULT_PLAN = JSON.parse(JSON.stringify(plan));
 const DEFAULT_NEXT_CHECK = "2026-10-17";
+const DEFAULT_MEAL_TIMES = { colazione: "08:00", merenda: "10:30", pranzo: "13:00", cena: "20:00" };
 const STORAGE_KEY = "piano-alimentare-v1";
 
 let activeDay = 0;
@@ -691,6 +739,7 @@ let adherence = {}; // dayIndex -> bool (giornata rispettata)
 let challenges = {}; // dayIndex -> bool (sfida fatta)
 let history = []; // [{date, day, colazione, merenda, pranzo:{item,cat,veg}, cena:{item,cat,veg}}]
 let nextCheckDate = DEFAULT_NEXT_CHECK;
+let mealTimes = { ...DEFAULT_MEAL_TIMES };
 
 function loadState() {
   try {
@@ -703,6 +752,7 @@ function loadState() {
     if (saved.challenges) challenges = saved.challenges;
     if (saved.history) history = saved.history;
     if (saved.nextCheckDate) nextCheckDate = saved.nextCheckDate;
+    if (saved.mealTimes) mealTimes = saved.mealTimes;
   } catch (e) {
     console.warn("Impossibile leggere i dati salvati:", e);
   }
@@ -710,7 +760,7 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ plan, checked, adherence, challenges, history, nextCheckDate }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ plan, checked, adherence, challenges, history, nextCheckDate, mealTimes }));
   } catch (e) {
     console.warn("Impossibile salvare i dati:", e);
   }
@@ -724,6 +774,57 @@ function resetPlan() {
 }
 
 loadState();
+
+function timeToMinutes(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function formatGap(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (m === 0) return h + "h";
+  return h + "h" + String(m).padStart(2,'0');
+}
+
+function gapClass(mins) {
+  const hours = mins / 60;
+  if (hours < 2) return "gap-short";
+  if (hours > 5.5) return "gap-long";
+  return "gap-ok";
+}
+
+function updateMealTime(meal, val) {
+  mealTimes[meal] = val;
+  saveState();
+  render();
+}
+
+function renderScheduleStrip() {
+  const order = [
+    { key: "colazione", label: "Colazione", icon: "☀️" },
+    { key: "merenda", label: "Merenda", icon: "🍎" },
+    { key: "pranzo", label: "Pranzo", icon: "🍽️" },
+    { key: "cena", label: "Cena", icon: "🌙" }
+  ];
+  let html = `<div class="schedule-strip">`;
+  order.forEach((m, i) => {
+    html += `
+      <div class="schedule-slot">
+        <div class="schedule-icon">${m.icon}</div>
+        <div class="schedule-label">${m.label}</div>
+        <input type="time" value="${mealTimes[m.key]}" onchange="updateMealTime('${m.key}', this.value)">
+      </div>
+    `;
+    if (i < order.length - 1) {
+      const gap = timeToMinutes(mealTimes[order[i+1].key]) - timeToMinutes(mealTimes[m.key]);
+      const cls = gapClass(gap);
+      html += `<div class="schedule-gap ${cls}">${formatGap(gap)}</div>`;
+    }
+  });
+  html += `</div>`;
+  return html;
+}
 
 function weekCounts() {
   const counts = {};
@@ -761,6 +862,7 @@ function render() {
         <h2>${d.day}</h2>
         <button class="btn log-btn" onclick="logToday(${activeDay})">${isLoggedToday(activeDay) ? '✓ Registrato oggi' : '📌 Registra come mangiato oggi'}</button>
       </div>
+      ${renderScheduleStrip()}
       <div class="freq-strip">${freqStrip}</div>
       <div class="meal-grid">
         <div class="card">
